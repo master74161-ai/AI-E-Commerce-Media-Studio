@@ -115,12 +115,16 @@ class TencentGoodsMattingClient:
                     Key=key,
                     ContentType="image/png",
                 )
-                response = client.get_object(
+                signed_url = client.get_presigned_download_url(
                     Bucket=settings.tencent_cos_bucket,
                     Key=key,
-                    **{"ci-process": "GoodsMatting", "center-layout": "0"},
+                    Params={"ci-process": "GoodsMatting", "center-layout": "0"},
+                    UseCiEndPoint=True,
                 )
-                body = response["Body"].get_raw_stream().read()
+                import requests
+                response = requests.get(signed_url, timeout=180)
+                response.raise_for_status()
+                body = response.content
                 if not body.startswith(b"\x89PNG"):
                     raise ProductCompositingError("Tencent GoodsMatting did not return PNG")
                 return body
