@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     rmbg_backend: str = "api"
     relight_enabled: bool = False
     comfyui_enabled: bool = False
+    product_scale: float = 0.62
+    product_vertical_position: float = 0.18
+    shadow_opacity: int = 42
+    shadow_blur: int = 28
     tencent_secret_id: str = ""
     tencent_secret_key: str = ""
     tencent_cos_bucket: str = ""

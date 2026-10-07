@@ -41,11 +41,14 @@ class SeedreamArkClient:
         payload = {
             "model": settings.seedream_model,
             "prompt": prompt,
-            "image": data_url,
             "size": size,
             "response_format": "url",
             "watermark": False,
         }
+        # Background-only generation intentionally omits the product reference.
+        # The original pixels are restored after generation by compositing.
+        if reference_path:
+            payload["image"] = data_url
         async with httpx.AsyncClient(timeout=settings.ai_api_timeout) as client:
             response = await client.post(url, json=payload, headers=headers)
             if response.status_code >= 400:
@@ -143,6 +146,17 @@ class TencentGoodsMattingClient:
 def _fit_canvas(image: Image.Image, size: tuple[int, int]) -> Image.Image:
     """Contain an image on a transparent canvas without stretching it."""
     image = image.convert("RGBA")
+    alpha = image.getchannel("A")
+    bbox = alpha.getbbox()
+    if bbox:
+        left, top, right, bottom = bbox
+        padding = int(max(right - left, bottom - top) * 0.03)
+        image = image.crop((
+            max(0, left - padding),
+            max(0, top - padding),
+            min(image.width, right + padding),
+            min(image.height, bottom + padding),
+        ))
     image.thumbnail(size, Image.Resampling.LANCZOS)
     canvas = Image.new("RGBA", size, (0, 0, 0, 0))
     left = (size[0] - image.width) // 2
@@ -160,12 +174,19 @@ def composite_product(background: bytes, cutout_path: str, output_path: str, siz
     scene = Image.open(__import__("io").BytesIO(background)).convert("RGB").resize(
         (width, height), Image.Resampling.LANCZOS
     )
-    product = _fit_canvas(Image.open(cutout_path), (int(width * 0.78), int(height * 0.78)))
+    settings = get_settings()
+    product = _fit_canvas(
+        Image.open(cutout_path),
+        (int(width * settings.product_scale), int(height * settings.product_scale)),
+    )
     alpha = product.getchannel("A")
-    shadow = Image.new("RGBA", product.size, (0, 0, 0, 100))
-    shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(max(2, width // 180))))
+    shadow = Image.new("RGBA", product.size, (0, 0, 0, settings.shadow_opacity))
+    shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(settings.shadow_blur)))
     shadow_canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    pos = ((width - product.width) // 2, int(height * 0.18))
+    pos = (
+        (width - product.width) // 2,
+        int(height * settings.product_vertical_position),
+    )
     shadow_canvas.alpha_composite(shadow, (pos[0] + width // 90, pos[1] + height // 45))
     shadow_canvas.alpha_composite(product, pos)
     result = Image.alpha_composite(scene.convert("RGBA"), shadow_canvas).convert("RGB")
@@ -199,6 +220,6 @@ async def generate_product_image(
             cutout = await remover.process(reference_path)
     # Pass the transparent cutout to Seedream so the original background is not
     # reintroduced as a second product by image-to-image generation.
-    scene = await SeedreamArkClient().generate(cutout, prompt, size)
+    scene = await SeedreamArkClient().generate(None, prompt, size)
     composite_product(scene, cutout, output_path, size)
     return output_path
