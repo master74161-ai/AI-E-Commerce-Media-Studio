@@ -42,6 +42,66 @@ def get_storage_service(
 task_metadata_store: dict[str, dict[str, Any]] = {}
 
 
+@router.post("/image-generation", response_model=UploadResponse)
+async def generate_product_image(
+    reference_image: UploadFile = File(...),
+    prompt: str = Form(...),
+    mode: str = Form("hero"),
+    image_type: str = Form("overall"),
+    position: int = Form(0),
+    purpose: str = Form(""),
+    size: str = Form("2048x2048"),
+    storage: StorageService = Depends(get_storage_service),
+) -> UploadResponse:
+    """Dify-compatible asynchronous product-faithful image generation endpoint."""
+    if not reference_image.content_type or not reference_image.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="reference_image must be an image")
+    if mode not in {"hero", "cut", "initialization", "retry"}:
+        raise HTTPException(status_code=400, detail="Unsupported generation mode")
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="prompt is required")
+    try:
+        width, height = (int(part) for part in size.split("x", 1))
+        if width < 256 or height < 256 or width > 4096 or height > 4096:
+            raise ValueError
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="size must be between 256 and 4096 pixels") from exc
+
+    task_id = str(uuid.uuid4())
+    suffix = Path(reference_image.filename or "reference.jpg").suffix or ".jpg"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix, mode="wb") as tmp:
+        tmp.write(await reference_image.read())
+        tmp_path = tmp.name
+    try:
+        stored_path = await storage.upload(tmp_path, f"uploads/{task_id}/reference{suffix}")
+    finally:
+        os.unlink(tmp_path)
+
+    now = datetime.now(timezone.utc)
+    task_metadata_store[task_id] = {
+        "task_id": task_id,
+        "created_at": now,
+        "updated_at": now,
+        "original_url": stored_path,
+        "mode": mode,
+        "image_type": image_type,
+        "position": position,
+        "purpose": purpose,
+        "prompt": prompt,
+        "size": size,
+    }
+    celery_task = celery_app.send_task(
+        "app.tasks.product_generation.generate_product_image_task",
+        args=[task_id, stored_path, prompt, mode, size, image_type, position, purpose],
+        task_id=task_id,
+    )
+    return UploadResponse(
+        task_id=task_id,
+        message=f"Product image generation queued: {celery_task.id}",
+        status=TaskStatus.PENDING,
+    )
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_image(
     file: UploadFile = File(...),
@@ -137,6 +197,9 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
             result_info = celery_result.result
             if isinstance(result_info, dict):
                 result_url = result_info.get("result_url")
+                if result_info.get("status") == "FAILED" or result_info.get("error"):
+                    error = result_info.get("error")
+                    status = TaskStatus.FAILED
         else:
             error = str(celery_result.result)
 
@@ -147,6 +210,23 @@ async def get_task_status(task_id: str) -> TaskStatusResponse:
         result_url=result_url,
         error=error,
     )
+
+
+@router.post("/image-generation/{task_id}/retry", response_model=UploadResponse)
+async def retry_product_image(task_id: str) -> UploadResponse:
+    """Requeue a failed Dify product-generation task with the original contract."""
+    metadata = task_metadata_store.get(task_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Task not found")
+    result = AsyncResult(task_id, app=celery_app)
+    if not result.failed() and result.state not in {"REVOKED"}:
+        raise HTTPException(status_code=409, detail="Task is not failed")
+    new_task = celery_app.send_task(
+        "app.tasks.product_generation.generate_product_image_task",
+        args=[task_id, metadata["original_url"], metadata["prompt"], metadata["mode"], metadata.get("size", "2048x2048"), metadata.get("image_type", "overall"), metadata.get("position", 0), metadata.get("purpose", "")],
+        task_id=task_id,
+    )
+    return UploadResponse(task_id=task_id, message=f"Retry queued: {new_task.id}", status=TaskStatus.PENDING)
 
 
 @router.get("/result/{task_id}", response_model=TaskResponse)
@@ -171,6 +251,9 @@ async def get_result(task_id: str) -> TaskResponse:
             result_info = celery_result.result
             if isinstance(result_info, dict):
                 result_url = result_info.get("result_url")
+                if result_info.get("status") == "FAILED" or result_info.get("error"):
+                    error = result_info.get("error")
+                    status = TaskStatus.FAILED
         else:
             error = str(celery_result.result)
 

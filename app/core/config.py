@@ -43,6 +43,23 @@ class Settings(BaseSettings):
     ai_api_timeout: float = 180.0
     ai_api_max_retries: int = 3
 
+    # Product-faithful compositing (Ark Seedream + RMBG API)
+    ark_api_key: str = ""
+    ark_base_url: str = "https://ark.cn-beijing.volces.com/api/v3"
+    seedream_model: str = "doubao-seedream-5-0-260128"
+    rmbg_backend: str = "api"
+    relight_enabled: bool = False
+    comfyui_enabled: bool = False
+    tencent_secret_id: str = ""
+    tencent_secret_key: str = ""
+    tencent_cos_bucket: str = ""
+    tencent_cos_region: str = "ap-beijing"
+    tencent_cos_prefix: str = "mvp-rmbg"
+    result_webhook_url: str = ""
+    supabase_url: str = ""
+    supabase_service_key: str = ""
+    supabase_results_table: str = "generated_assets"
+
     # OpenAI (storyboard generation)
     openai_api_key: str = ""
 

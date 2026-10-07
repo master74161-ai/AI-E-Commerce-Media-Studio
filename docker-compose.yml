@@ -38,7 +38,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ecommerce-worker
-    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=1
     environment:
       - DEBUG=false
       - REDIS_URL=redis://redis:6379/0
@@ -52,13 +52,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [ gpu ]
     restart: unless-stopped
     networks:
       - app-network

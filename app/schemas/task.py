@@ -68,3 +68,4 @@ class UploadResponse(BaseModel):
     task_id: str
     message: str
     status: TaskStatus
+    data: Optional[dict] = None

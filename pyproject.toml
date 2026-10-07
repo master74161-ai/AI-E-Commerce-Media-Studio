@@ -29,6 +29,7 @@ dependencies = [
     "sentencepiece>=0.2.0",
     "replicate>=1.0.7",
     "openai>=1.0.0",
+    "cos-python-sdk-v5>=1.9.35",
 ]
 
 [tool.uv]
