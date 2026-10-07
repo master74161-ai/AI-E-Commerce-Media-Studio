@@ -118,7 +118,7 @@ class TencentGoodsMattingClient:
                 response = client.get_object(
                     Bucket=settings.tencent_cos_bucket,
                     Key=key,
-                    Params={"ci-process": "GoodsMatting", "center-layout": "0"},
+                    **{"ci-process": "GoodsMatting", "center-layout": "0"},
                 )
                 body = response["Body"].get_raw_stream().read()
                 if not body.startswith(b"\x89PNG"):
