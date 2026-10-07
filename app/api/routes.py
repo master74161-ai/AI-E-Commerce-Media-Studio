@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from celery.result import AsyncResult
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.core.celery_app import celery_app
 from app.core.config import Settings, get_settings
@@ -40,6 +41,21 @@ def get_storage_service(
 # In-memory store for task metadata (created_at, original_url, etc.)
 # Task STATUS is queried from Celery/Redis
 task_metadata_store: dict[str, dict[str, Any]] = {}
+
+
+@router.get("/result/{task_id}/download")
+async def download_product_result(task_id: str) -> FileResponse:
+    """Serve a completed local result to Dify or a browser."""
+    metadata = task_metadata_store.get(task_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Task not found")
+    result = AsyncResult(task_id, app=celery_app)
+    if not result.successful() or not isinstance(result.result, dict):
+        raise HTTPException(status_code=409, detail="Result is not ready")
+    path = result.result.get("result_url")
+    if not path or not Path(path).is_file():
+        raise HTTPException(status_code=404, detail="Result file not found")
+    return FileResponse(path, media_type="image/jpeg", filename=f"{task_id}.jpg")
 
 
 @router.post("/image-generation", response_model=UploadResponse)

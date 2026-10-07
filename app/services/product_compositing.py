@@ -197,6 +197,8 @@ async def generate_product_image(
                 raise ProductCompositingError("RMBG API is not configured")
         else:
             cutout = await remover.process(reference_path)
-    scene = await SeedreamArkClient().generate(reference_path, prompt, size)
+    # Pass the transparent cutout to Seedream so the original background is not
+    # reintroduced as a second product by image-to-image generation.
+    scene = await SeedreamArkClient().generate(cutout, prompt, size)
     composite_product(scene, cutout, output_path, size)
     return output_path
