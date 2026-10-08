@@ -28,14 +28,11 @@ class SeedreamArkClient:
     """Small client for the official Volcengine Ark image API."""
 
     async def generate(
-        self, reference_path: str, prompt: str, size: str = "2048x2048"
+        self, reference_path: str | None, prompt: str, size: str = "2048x2048"
     ) -> bytes:
         settings = get_settings()
         if not settings.ark_api_key:
             raise ProductCompositingError("ARK_API_KEY is not configured")
-        image_bytes = Path(reference_path).read_bytes()
-        encoded = base64.b64encode(image_bytes).decode("ascii")
-        data_url = "data:image/jpeg;base64," + encoded
         url = urljoin(settings.ark_base_url.rstrip("/") + "/", "images/generations")
         headers = {"Authorization": f"Bearer {settings.ark_api_key}"}
         payload = {
@@ -45,9 +42,10 @@ class SeedreamArkClient:
             "response_format": "url",
             "watermark": False,
         }
-        # Background-only generation intentionally omits the product reference.
-        # The original pixels are restored after generation by compositing.
         if reference_path:
+            image_bytes = Path(reference_path).read_bytes()
+            encoded = base64.b64encode(image_bytes).decode("ascii")
+            data_url = "data:image/jpeg;base64," + encoded
             payload["image"] = data_url
         async with httpx.AsyncClient(timeout=settings.ai_api_timeout) as client:
             response = await client.post(url, json=payload, headers=headers)
@@ -122,7 +120,7 @@ class TencentGoodsMattingClient:
                     Bucket=settings.tencent_cos_bucket,
                     Key=key,
                     Params={"ci-process": "GoodsMatting", "center-layout": "0"},
-                    UseCiEndPoint=True,
+                    UseCiEndPoint=False,
                 )
                 import requests
                 response = requests.get(signed_url, timeout=180)
